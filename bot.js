@@ -21,10 +21,7 @@ async function main() {
     });
 
     async function loadMap() {
-        const { data: { lastBoardUrl } } = await runQuery({
-            operationName: 'lastBoardUrl',
-            query: 'query lastBoardUrl { lastBoardUrl }',
-        });
+        const { data: { lastBoardUrl } } = await runQuery('query lastBoardUrl { lastBoardUrl }');
         console.debug('lastBoardUrl', lastBoardUrl);
         const stream = got.stream(lastBoardUrl);
         const outputStream = fs.createWriteStream('map.png');
@@ -34,19 +31,18 @@ async function main() {
     const mapPixelIndex = indexPixelPos(await loadMap());
 
 
-    async function protec({ maxCredit = 100, minLevel = 2 }) {
+    async function protec({ maxCredit = 100, minLevel = 2, batchSize = 3  }) {
         const correctPixels = image
             // Keep pixels with incorrect color
             .filter(({ x, y, color }) => mapPixelIndex[x]?.[y] && mapPixelIndex[x][y].color === color);
 
         console.debug(`Total pixels to protect:`, correctPixels.length);
 
-        const getPixels = {
-            query: `query getPixelLevel { ${correctPixels.map(
+        const { data } = await runQuery(
+            `query getPixelLevel { ${correctPixels.map(
                 ({ x, y }, i) => `a${i}: getPixelLevel(pixel: ${pixelVar({ x, y })}) { x y level }`,
-            ).join('\n')} }`,
-        };
-        const { data } = await runQuery(getPixels);
+            )} }`
+        );
         let cost = 0;
         const pixels = [];
         for (let [sIdx, { x, y, level }] of Object.entries(data)) {
@@ -59,37 +55,33 @@ async function main() {
         console.debug(`Pixels to protect (minLevel: ${minLevel}):`, pixels.length, `(cost: ${cost})`);
         console.debug('Cost:', cost);
 
-        for (let pixelBatch of _.chunk(pixels, 3)) {
-            const upgradePixels = {
-                query: `mutation upgradePixels { ${pixelBatch.map(
-                    (pixel, i) => `a${i}: upgradePixels(pixels: [${pixelVar(pixel)}])`,
-                ).join('\n')} }`,
-            };
+        for (let pixelBatch of _.chunk(pixels, batchSize)) {
             await sleep(1000 + (Math.random() * 500));
             console.debug('mutate ', JSON.stringify(pixelBatch));
-            const { errors } = await runQuery(upgradePixels);
-            if (errors) {
-                console.debug(JSON.stringify(errors, null, 2));
-                process.exit();
-            }
+
+            await runQuery(
+                `mutation upgradePixels { ${pixelBatch.map(
+                    (pixel, i) => `a${i}: upgradePixels(pixels: [${pixelVar(pixel)}])`,
+                )} }`
+            );
         }
     }
 
-    async function atac({ maxCredit = 100, maxLevel = 4, upgrade = true }) {
+    async function atac({ maxCredit = 100, maxLevel = 4, upgrade = true, batchSize = 3 }) {
+        // Pixels on the map with incorrect color (target image colors)
         const incorrectPixels = image
-            // Keep pixels with incorrect color
             .filter(({ x, y, color }) => mapPixelIndex[x]?.[y] && mapPixelIndex[x][y].color !== color);
 
-        console.debug(`Total pixels to fix:`, incorrectPixels.length);
+        console.debug(`Total pixels to fix:`, incorrectPixels.length, 'px');
         if (incorrectPixels.length === 0) return;
 
-        const getPixels = {
-            query: `query getPixelLevel { ${incorrectPixels.map(
+        const { data } = await runQuery(
+            `query getPixelLevel { ${incorrectPixels.map(
                 ({ x, y }, i) => `a${i}: getPixelLevel(pixel: ${pixelVar({ x, y })}) { x y level }`,
-            ).join('\n')}  }`,
-        };
-        const { data } = await runQuery(getPixels);
+            )}  }`
+        );
         let cost = 0;
+        let totalCost = 0;
         const pixels = [];
         for (let [sIdx, { x, y, level }] of Object.entries(data)) {
             const idx = parseInt(sIdx.split('a')[1]);
@@ -100,30 +92,26 @@ async function main() {
                 if (upgrade) cost += level + 1;
                 pixels.push({ x, y, color, currentLevel: level });
             }
+            totalCost += level;
+            if (upgrade) totalCost += level + 1;
         }
-        console.debug(`Pixel to fix (maxLevel: ${maxLevel}):`, pixels.length, `(cost: ${cost})\n`);
+        console.debug('Total cost', totalCost, 'credits');
+        console.debug(`Pixel to fix (maxLevel: ${maxLevel}):`, pixels.length, 'px', '(cost:', cost, 'credits)', '\n');
 
-        for (let pixelBatch of _.chunk(pixels, 3)) {
-            const pixelSets = pixelBatch.map(({ x, y, color, currentLevel }, i) => `
-                a${i}: setPixels(pixels: [${pixelVar({ x, y, color, currentLevel })}])
-                ${upgrade ? `b${i}: upgradePixels(pixels: [${pixelVar({ x, y, targetLevel: currentLevel + 1 })}])` : ''}
-            `).join('\n');
-            let setPixels = {
-                operationName: 'setPixels',
-                variables: { pixels: [{ x: 193, y: 489, color: 1, currentLevel: 1 }] },
-                query: `mutation setPixels { ${pixelSets} }`,
-            };
+        for (let pixelBatch of _.chunk(pixels, batchSize)) {
             await sleep(1000 + (Math.random() * 500));
+
             console.debug('mutate ', JSON.stringify(pixelBatch));
-            const { errors } = await runQuery(setPixels);
-            if (errors) {
-                console.debug(JSON.stringify(errors, null, 2));
-                process.exit();
-            }
+            await runQuery(
+                `mutation setPixels { ${pixelBatch.map(({ x, y, color, currentLevel }, i) => `
+                    a${i}: setPixels(pixels: [${pixelVar({ x, y, color, currentLevel })}])
+                    ${upgrade ? `b${i}: upgradePixels(pixels: [${pixelVar({ x, y, targetLevel: currentLevel + 1 })}])` : ''}
+                `)} }`
+            );
         }
     }
 
-    //await atac({ maxCredit: 48 });
+    await atac({ maxCredit: 48, maxLevel: 4, upgrade: false });
     //await protec({ maxCredit: 10 });
 }
 

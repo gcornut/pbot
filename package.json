@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "got": "^11.8.5",
+    "lodash": "^4.17.21",
+    "pngjs": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

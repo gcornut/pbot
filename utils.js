@@ -88,19 +88,23 @@ async function loadCachedColors() {
     }
 }
 
-function loadPNGStream({ colors, stream, transparentColor, outputStream }) {
+function loadPNGStream({ colors, stream, transparentColor, outputStream, init = 0, step=1 }) {
     return new Promise((resolve) => {
         stream.pipe(new pngjs.PNG())
             .on('parsed', function () {
                 const pixels = [];
-                for (let y = 0; y < this.height; y++) {
-                    for (let x = 0; x < this.width; x++) {
+                let y1 = 0;
+                for (let y = init; y < this.height; y += step) {
+                    y1 += 1;
+                    let x1 = 0;
+                    for (let x = init; x < this.width; x += step) {
+                        x1 += 1;
                         const idx = (this.width * y + x) << 2;
                         const rgb = { r: this.data[idx], g: this.data[idx + 1], b: this.data[idx + 2] };
                         const opacity = this.data[idx + 3];
                         const color = nearestColor(colors, rgb);
                         if (color !== transparentColor && opacity !== 0) {
-                            pixels.push({ x, y, color });
+                            pixels.push({ x: x1, y: y1, color });
                         }
                     }
                 }
@@ -120,6 +124,20 @@ function indexPixelPos(image) {
     return index;
 }
 
+function toPNG({ pixels, colors, file }) {
+    const png = new pngjs.PNG({ width: 700, height: 500, filterType: -1 });
+    for (let { x, y, color } of pixels) {
+        let { colorCode } = colors[color];
+        const { r, g, b } = hexToRgb(colorCode);
+        var idx = (png.width * y + x) << 2;
+        png.data[idx] = r; // red
+        png.data[idx + 1] = g; // green
+        png.data[idx + 2] = b; // blue
+        png.data[idx + 3] = 255; // alpha (0 is transparent)
+    }
+    png.pack().pipe(fs.createWriteStream(file));
+}
+
 module.exports = {
     runQuery,
     sleep,
@@ -127,4 +145,6 @@ module.exports = {
     loadPNGStream,
     loadCachedColors,
     indexPixelPos,
+    hexToRgb,
+    toPNG
 };

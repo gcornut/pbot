@@ -6,6 +6,12 @@ const { pixelVar, runQuery, sleep, loadPNGStream, loadCachedColors, indexPixelPo
 async function main() {
     const colors = await loadCachedColors();
 
+    const loadOverlay = async ({ file }) => {
+        const pixels = await loadPNGStream({ colors, stream: fs.createReadStream(file), init: 1, step: 3 });
+        return pixels.reverse()
+            // Randomize pixels
+            .sort(() => 0.5 - Math.random());
+    };
     const loadTarget = async ({ originPoint, file, transparentColor }) => {
         const pixels = await loadPNGStream({ colors, stream: fs.createReadStream(file), transparentColor });
         return pixels
@@ -13,12 +19,10 @@ async function main() {
             // Randomize pixels
             .sort(() => 0.5 - Math.random());
     };
-    // TARGET image with origin point
-    // https://www.pixilart.com/draw?ref=home-page
-    const image = await loadTarget({
-        originPoint: { x: 174, y: 455 },
-        file: 'unknown.png'
-    });
+    // TARGET image with origin point (https://www.pixilart.com/draw?ref=home-page)
+    //const image = await loadTarget({ originPoint: { x: 174, y: 455 }, file: 'unknown.png' });
+    const image = await loadOverlay({ file: 'overlay.png' });
+    //toPNG({ pixels: image, colors, file: 'newOut.png' });
 
     async function loadMap() {
         const { data: { lastBoardUrl } } = await runQuery('query lastBoardUrl { lastBoardUrl }');
@@ -111,7 +115,7 @@ async function main() {
         }
     }
 
-    await atac({ maxCredit: 48, maxLevel: 4, upgrade: false });
+    await atac({ maxCredit: 200, maxLevel: 999, upgrade: false });
     //await protec({ maxCredit: 10 });
 }
 
